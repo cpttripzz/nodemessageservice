@@ -11,12 +11,31 @@ const client = redis.createClient();
 log('info', 'connected to redis server');
 var io = require('socket.io')(8080);
 //var io = require('socket.io')(server, {origins:'bandaid:* http://bandaid:* '});
-
+const subscribe = redis.createClient();
 app.listen(CONF.EXPRESS.PORT, CONF.EXPRESS.HOST, function () {
+    subscribe.subscribe('realtime');
     console.log("Server up and running...");
 });
 
 var users = [];
+subscribe.on("message", function (channel, message) {
+
+    log('msg', "received from channel #" + channel + " : " + message);
+
+    message = JSON.parse(message);
+
+    for (var userId in message) {
+        console.log(findWithAttr(users,'userId',parseInt(userId)), userId);
+        if ( findWithAttr(users,'userId',parseInt(userId)) !== false) {
+            log('debug', 'sending message to userid' + userId + ' # new messages: ' + message[userId]);
+            try {
+                io.sockets.in(userId).emit('new_msg', {'new_messages': message[userId]});
+            } catch (e) {
+                log('error', e.toString());
+            }
+        }
+    }
+});
 
 io.on('connection', function (socket) {
 
@@ -48,31 +67,9 @@ io.on('connection', function (socket) {
         }
     });
 
-    const subscribe = redis.createClient();
-    subscribe.subscribe('realtime');
 
-    subscribe.on("message", function (channel, message) {
 
-        log('msg', "received from channel #" + channel + " : " + message);
 
-        message = JSON.parse(message);
-
-        for (var userId in message) {
-
-//            if (!message.hasOwnProperty(message[userId])) {
-//                continue;
-//            }
-            console.log(findWithAttr(users,'userId',parseInt(userId)), userId);
-            if ( findWithAttr(users,'userId',parseInt(userId)) !== false) {
-                log('debug', 'sending message to userid' + userId + ' # new messages: ' + message[userId]);
-                try {
-                    socket.in(userId).emit('new_msg', {'new_messages': message[userId]});
-                } catch (e) {
-                    log('error', e.toString());
-                }
-            }
-        }
-    });
 
 
     client.on('message', function (msg) {
