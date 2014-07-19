@@ -11,14 +11,15 @@ const client = redis.createClient();
 log('info', 'connected to redis server');
 var io = require('socket.io')(8080);
 //var io = require('socket.io')(server, {origins:'bandaid:* http://bandaid:* '});
-const subscribe = redis.createClient();
+const redisSubscriberClient = redis.createClient();
+const redisClient = redis.createClient();
 app.listen(CONF.EXPRESS.PORT, CONF.EXPRESS.HOST, function () {
-    subscribe.subscribe('realtime');
+    redisSubscriberClient.subscribe('realtime');
     console.log("Server up and running...");
 });
 
 var users = [];
-subscribe.on("message", function (channel, message) {
+redisSubscriberClient.on("message", function (channel, message) {
 
     log('msg', "received from channel #" + channel + " : " + message);
 
@@ -40,17 +41,28 @@ subscribe.on("message", function (channel, message) {
 io.on('connection', function (socket) {
 
     socket.on('join', function (data) {
-
         if (typeof data !== 'undefined') {
             var data = JSON.parse(data);
-            if (findWithAttr(users,'userId',data.id) === false) {
-                log('msg', 'user id connected: ' + data.id);
-                socket.join(data.id);
+            if (findWithAttr(users,'userId',userId) === false) {
+                var userId = data.id;
+                log('msg', 'user id connected: ' + userId);
+                socket.join(userId);
                 var userObj = { };
                 userObj.socketId = socket.id;
-                userObj.userId = data.id;
+                userObj.userId = userId;
                 users.push(userObj);
                 log('msg', 'users connected: ' + users.length);
+                try {
+                    var newMsgs;
+                    redisClient.get('new_messages:'+  userId,  function (err, reply) {
+                        newMsgs = reply;
+                        io.sockets.in(userId).emit('connect_success', {'new_messages': newMsgs});
+                    });
+
+
+                } catch (e) {
+                    log('error', e.toString());
+                }
             }
         }
 
@@ -67,18 +79,13 @@ io.on('connection', function (socket) {
         }
     });
 
-
-
-
-
-
     client.on('message', function (msg) {
         log('debug', msg);
     });
 
     client.on('disconnect', function () {
         log('warn', 'disconnecting from redis');
-        subscribe.quit();
+        redisSubscriberClient.quit();
     });
 });
 
